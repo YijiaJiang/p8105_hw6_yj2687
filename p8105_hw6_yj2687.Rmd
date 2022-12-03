@@ -142,7 +142,7 @@ baltimore_logistic_summary %>%
                col.names = c("Term", "Estimated adjusted OR", "Lower bound of 95%CI", "Upper bound of 95%CI"))
 ```
 
-* For the city of Baltimore, MD, controlling for all other variables, the homicides whose victim is male are significantly less like to be resolved than those whose victim is female.
+* For the city of Baltimore, MD, controlling for all other variables, the homicides whose victim is male are less like to be resolved than those whose victim is female.
 
 
 ```{r, warning=FALSE, message=FALSE}
@@ -160,10 +160,10 @@ allcities_logistic = homicide_df %>%
     CI_upper = exp(conf.high),
   ) %>% 
   filter(term == "victim_sexMale") %>% 
-  select(city_state, OR, CI_lower,CI_upper) 
+  select(city_state, OR, CI_lower, CI_upper) 
 
 allcities_logistic %>% 
-  knitr::kable(digits = 3, align = "llccc", col.names = c("City", "Estimated adjusted OR", "CI lower bound", "CI upper bound"))
+  knitr::kable(digits = 3, align = "llccc", col.names = c("City", "Estimated adjusted OR", "Lower bound of 95%CI", "Upper bound of 95%CI"))
 ```
 
 
@@ -174,12 +174,14 @@ allcities_logistic %>%
   ggplot(aes(x = city_state, y = OR)) +
   geom_point() +
   geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper)) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), plot.title = element_text(size = 12)) +
   labs(x = "City", y = "Estimated OR with CI",
-       title = "Estimated Odds Ratios and CIs for Solving Homicides Comparing Male to Female Victims")
+       title = "Estimated Odds Ratios and CIs for Solving Homicides Comparing Male to Female Victims") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), 
+        plot.title = element_text(size = 12)) 
 ```
 
-* 
+* Holding all other variables constant, for most cities, homicides in which victim is male are less likely to be resolved than those in which the victim is female, as we can observe that most of the estimated odds ratios for solving homicides are less than 1. In particular, for those where OR is less than 1 and CI fail to include 1, such as New York and Chicago, we can safely say that homicide cases with male victims are significantly less likely to be resolved compared to those with female victims.
+
 &nbsp;
 
 
