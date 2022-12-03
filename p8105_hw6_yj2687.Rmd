@@ -9,6 +9,8 @@ output: github_document
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(viridis)
+library(purrr)
+library(modelr)
 
 knitr::opts_chunk$set(
 	echo = TRUE,
@@ -93,7 +95,7 @@ The point of this is not to say you should always use the bootstrap -- it's poss
 
 ```{r, warning=FALSE, message=FALSE}
 # Import the dataset
-homicide_raw <- read_csv(url("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv"), na = c("", "NA", "Unknown"))
+homicide_raw <- read_csv(url("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv"))
 
 # Clean dataset
 # Create variables city_state, resolved;
@@ -128,7 +130,7 @@ baltimore_logistic %>%
   mutate(OR = exp(estimate),
          CI_lower = exp(exp(conf.low)),
          CI_upper = exp(exp(conf.high)),
-         p_val = rstatix::p_format(p.value, digits = 2)) %>% 
+         p_val = rstatix::p_format(p.value, digits = 4)) %>% 
   select(term, OR, CI_lower,CI_upper, p_val) %>% 
   mutate(term = str_replace(term, "victim_age", "Victim age"),
          term = str_replace(term, "victim_race", "Victim Race: "),
@@ -171,7 +173,8 @@ allcities_logistic %>%
   geom_point() +
   geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-  labs(x = "City", y = "Estimated OR with CI")
+  labs(x = "City", y = "Estimated OR with CI",
+       title = "Odds Ratio for Solving Homicides Comparing Male to Female Victims")
 ```
 
 * 
@@ -185,4 +188,109 @@ allcities_logistic %>%
 birthweight_raw <- read_csv("./p8105_hw6_data/birthweight.csv")
 
 # Tidy the dataset
+birthweight_df = birthweight_raw %>% 
+  janitor::clean_names() %>%
+  mutate(across(.cols = c(babysex, malform, frace, mrace), as.factor))
+
+# Check for NA
+map(birthweight_df, ~sum(is.na(.)))
+
+# Dataset summary
+skimr::skim(birthweight_df)
 ```
+
+* In the data tidying and wrangling process, I converted the variable `babysex`, `malform`, `frace`, and `mrace` into factors as they are categorical variables.
+* In our tidied dataset, no missing values was detected in all variables.
+
+```{r, warning=FALSE, message=FALSE}
+# Propose a regression model for birthweight
+# Based on a data-driven model-building process
+mult.fit = lm(bwt ~ ., data = birthweight_df)
+step(mult.fit, direction = "both", k = 2)
+```
+
+* By using the stepwise regression with Akaike information criterion (AIC), it determines objectively the best model as the one that minimizes the considered information criterion. The resulting model has 11 variables, which are `babysex`, `bhead`, `blength`, `delwt`, `fincome`, `gaweeks`, `mheight`, `mrace`, `parity`, `ppwt` and `smoken`.
+
+```{r, warning=FALSE, message=FALSE}
+model_fit1 = lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken, data = birthweight_df)
+summary(model_fit1)
+```
+
+* After looking at the summary, I found out the p-value of `fincome` is greater than 0.05 and hence I am going to drop it.
+
+```{r, warning=FALSE, message=FALSE}
+# Check correlation between predictors and the selected continuous variables
+birthweight_df %>%
+  select(bhead, blength, delwt, fincome, gaweeks, mheight, parity, ppwt, smoken) %>% 
+  PerformanceAnalytics::chart.Correlation(method = "pearson")
+```
+
+* According to the correlation plot above, we can identify a potential collinearity between `delwt` and `ppwt` and between `bhead` and `blength`. Therefore, I plan to exclude `ppwt` and `blength` from my model, whose p-values are relatively larger in my model.
+
+```{r, warning=FALSE, message=FALSE}
+# Model after dropping blength, ppwt and fincome
+model_fit2 = lm(bwt ~ babysex + bhead + delwt + gaweeks + mheight + mrace + parity + smoken, data = birthweight_df)
+summary(model_fit2)
+```
+
+* After dropping the three variables `blength`, `ppwt` and `fincome`, I rebuild my model and obtain the results that the p-value for `parity` is greater than 0.05, which is not signicant at the level of 0.05. so I drop this variable too.
+
+```{r, warning=FALSE, message=FALSE}
+# Model after dropping blength, ppwt, fincome and parity
+model_fit3 = lm(bwt ~ babysex + bhead + delwt + gaweeks + mheight + mrace + smoken, data = birthweight_df)
+summary(model_fit3)
+```
+
+* Final model is as follows: bwt ~  babysex + bhead + delwt + gaweeks + mheight + mrace + smoken.
+
+```{r, warning=FALSE, message=FALSE}
+# Make a plot of model residuals against fitted values
+birthweight_df %>%
+  add_residuals(model_fit3) %>%
+  add_predictions(model_fit3) %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Fitted Values", y = "Residuals", 
+       title = "Model Residuals Against Fitted Values") 
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+# Model using length at birth and gestational age as predictors (main effects only)
+comp_fit1 = lm(bwt ~ blength + gaweeks, data = birthweight_df)
+
+# Model using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+comp_fit2 = lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = birthweight_df)
+```
+
+
+
+```{r, warning=FALSE, message=FALSE}
+# Make a comparison with two other models in terms of the cross-validated prediction error
+# Cross Validation
+cv_df =
+  crossv_mc(birthweight_df, 100) %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble)) %>% 
+  mutate(model1 = map(train, ~lm(bwt ~ babysex + bhead + delwt + gaweeks + mheight + mrace + smoken, data = as_tibble(.x))),
+         model2 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+         model3 = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = .x))) %>% 
+  mutate(rmse_model1 = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
+         rmse_model2 = map2_dbl(model2, test, ~rmse(model = .x, data = .y)),
+         rmse_model3 = map2_dbl(model3, test, ~rmse(model = .x, data = .y)))
+
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin() +
+  labs(x = "Model", y = "Root Mean Square Error (RMSE)",
+       title = "Model Comparison of the Cross-Validated Prediction Error") +
+  scale_x_discrete(labels = c("My model", "Model with Main effects", "Model with Interactions"))
+
