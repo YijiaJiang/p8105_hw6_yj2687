@@ -6,7 +6,7 @@ output: github_document
 ---
 
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, warning=FALSE}
 library(tidyverse)
 library(viridis)
 library(purrr)
@@ -95,25 +95,25 @@ The point of this is not to say you should always use the bootstrap -- it's poss
 
 ```{r, warning=FALSE, message=FALSE}
 # Import the dataset
-homicide_raw <- read_csv(url("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv"))
+homicide_url = "https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv"
+homicide_raw = read_csv(url(homicide_url)) 
 
 # Clean dataset
 # Create variables city_state, resolved;
 # Omit cities without victim race reports and error city;
 # Limit victim_race to white or black
 homicide_df = homicide_raw %>% 
-  janitor::clean_names() %>%
+  janitor::clean_names() %>% 
   mutate(reported_date = as.Date(as.character(reported_date), format = "%Y%m%d"),
          victim_age = as.numeric(victim_age),
          victim_race = fct_relevel(victim_race, "White"),
+         victim_sex = fct_relevel(victim_sex, "Female"),
+         state = toupper(state),
          city_state = str_c(city, state, sep = ", "),
-         resolved = case_when(
-           disposition == "Closed without arrest" ~ 0,
-           disposition == "Open/No arrest" ~ 0,
-           disposition == "Closed by arrest" ~ 1)) %>% 
-  relocate(city_state) %>% 
+         resolved = as.numeric(disposition == "Closed by arrest")) %>% 
   filter(!city_state %in% c("Dallas, TX","Phoenix, AZ","Kansas City, MO","Tulsa, AL"),
-         victim_race %in% c("White","Black"))
+         victim_race %in% c("White","Black")) %>% 
+  relocate(city_state) 
 ```
 
 
@@ -124,19 +124,22 @@ baltimore_logistic = homicide_df %>%
     filter(city_state == "Baltimore, MD") %>% 
     glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial(link = "logit")) 
 
-# Obtain the estimate and CI of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
-baltimore_logistic %>% 
+# Obtain the estimate and CI of the adjusted odds ratio for solving homicides
+baltimore_logistic_summary = baltimore_logistic %>% 
   broom::tidy(conf.int = T) %>% 
   mutate(OR = exp(estimate),
-         CI_lower = exp(exp(conf.low)),
-         CI_upper = exp(exp(conf.high)),
-         p_val = rstatix::p_format(p.value, digits = 4)) %>% 
-  select(term, OR, CI_lower,CI_upper, p_val) %>% 
-  mutate(term = str_replace(term, "victim_age", "Victim age"),
-         term = str_replace(term, "victim_race", "Victim Race: "),
-         term = str_replace(term, "victim_sex", "Victim Sex: ")) %>% 
+         CI_lower = exp(conf.low),
+         CI_upper = exp(conf.high)) %>% 
+  select(term, OR, CI_lower,CI_upper)
+
+baltimore_logistic_summary
+
+# Comparing male victims to female victims keeping all other variables fixed
+baltimore_logistic_summary %>% 
+  filter(term == "victim_sexMale") %>%
+  mutate(term = str_replace(term, "victim_sex", "Victim Sex: ")) %>% 
   knitr::kable(digits = 3, align = "lccc", 
-               col.names = c("Term", "Estimated adjusted OR", "CI lower bound", "CI upper bound", "p-value"))
+               col.names = c("Term", "Estimated adjusted OR", "Lower bound of 95%CI", "Upper bound of 95%CI"))
 ```
 
 * For the city of Baltimore, MD, controlling for all other variables, the homicides whose victim is male are significantly less like to be resolved than those whose victim is female.
@@ -155,13 +158,12 @@ allcities_logistic = homicide_df %>%
     OR = exp(estimate),
     CI_lower = exp(conf.low),
     CI_upper = exp(conf.high),
-    p_val = rstatix::p_format(p.value, digits = 2)
   ) %>% 
   filter(term == "victim_sexMale") %>% 
-  select(city_state, OR, CI_lower,CI_upper, p_val) 
+  select(city_state, OR, CI_lower,CI_upper) 
 
 allcities_logistic %>% 
-  knitr::kable(digits = 3, align = "llccc", col.names = c("City", "Estimated adjusted OR", "CI lower bound", "CI upper bound", "p-value"))
+  knitr::kable(digits = 3, align = "llccc", col.names = c("City", "Estimated adjusted OR", "CI lower bound", "CI upper bound"))
 ```
 
 
@@ -172,9 +174,9 @@ allcities_logistic %>%
   ggplot(aes(x = city_state, y = OR)) +
   geom_point() +
   geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper)) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), plot.title = element_text(size = 12)) +
   labs(x = "City", y = "Estimated OR with CI",
-       title = "Odds Ratio for Solving Homicides Comparing Male to Female Victims")
+       title = "Estimated Odds Ratios and CIs for Solving Homicides Comparing Male to Female Victims")
 ```
 
 * 
@@ -233,7 +235,7 @@ model_fit2 = lm(bwt ~ babysex + bhead + delwt + gaweeks + mheight + mrace + pari
 summary(model_fit2)
 ```
 
-* After dropping the three variables `blength`, `ppwt` and `fincome`, I rebuild my model and obtain the results that the p-value for `parity` is greater than 0.05, which is not signicant at the level of 0.05. so I drop this variable too.
+* After dropping the three variables `blength`, `ppwt` and `fincome`, I rebuild my model and obtain the results that the p-value for `parity` is greater than 0.05, which is not signicant at the level of 0.05. Thus, I drop this variable too.
 
 ```{r, warning=FALSE, message=FALSE}
 # Model after dropping blength, ppwt, fincome and parity
@@ -293,4 +295,5 @@ cv_df %>%
   labs(x = "Model", y = "Root Mean Square Error (RMSE)",
        title = "Model Comparison of the Cross-Validated Prediction Error") +
   scale_x_discrete(labels = c("My model", "Model with Main effects", "Model with Interactions"))
+```
 
