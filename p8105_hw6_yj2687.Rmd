@@ -122,7 +122,7 @@ homicide_df = homicide_raw %>%
 #  For the city of Baltimore, MD, fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors.
 baltimore_logistic = homicide_df %>%
     filter(city_state == "Baltimore, MD") %>% 
-    glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial(link = "logit")) 
+    glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial()) 
 
 # Obtain the estimate and CI of the adjusted odds ratio for solving homicides
 baltimore_logistic_summary = baltimore_logistic %>% 
@@ -150,7 +150,7 @@ baltimore_logistic_summary %>%
 allcities_logistic = homicide_df %>% 
   nest(data = -city_state) %>% 
   mutate(
-    models = map(data, ~glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial(link = "logit"))),
+    models = map(data, ~glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial())),
     results = map(models, ~broom::tidy(.x, conf.int = T))) %>% 
   select(city_state, results) %>% 
   unnest(results) %>% 
@@ -194,7 +194,11 @@ birthweight_raw <- read_csv("./p8105_hw6_data/birthweight.csv")
 # Tidy the dataset
 birthweight_df = birthweight_raw %>% 
   janitor::clean_names() %>%
-  mutate(across(.cols = c(babysex, malform, frace, mrace), as.factor))
+  mutate(across(.cols = c(babysex, malform, frace, mrace), as.factor)) %>% 
+  mutate(babysex = ifelse(babysex == "1", "male","female"),
+         malform = ifelse(malform == "0", "absent","present"),
+         frace = recode(frace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican", "8" = "Other", "9" = "Unknown"),
+         mrace = recode(mrace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican", "8" = "Other"))
 
 # Check for NA
 map(birthweight_df, ~sum(is.na(.)))
@@ -203,7 +207,7 @@ map(birthweight_df, ~sum(is.na(.)))
 skimr::skim(birthweight_df)
 ```
 
-* In the data tidying and wrangling process, I converted the variable `babysex`, `malform`, `frace`, and `mrace` into factors as they are categorical variables.
+* In the data tidying and wrangling process, I converted the variable `babysex`, `malform`, `frace`, and `mrace` into factors as they are categorical variables, and then recoded them to their associated information for easy reference.
 * In our tidied dataset, no missing values was detected in all variables.
 
 ```{r, warning=FALSE, message=FALSE}
@@ -259,6 +263,8 @@ birthweight_df %>%
        title = "Model Residuals Against Fitted Values") 
 ```
 
+* The residuals vs. fitted values plot can be used to assess constant variance in the data. From the plot above, we can observe a outlier with residual greater than 2000 and a cluster around 0 towards the higher end of the fitted values. It looks like a nonconstant variance plot as the spread of the residuals fails to be roughly equal at each level of the fitted values. Thus, we will say that the constant variance assumption is violated.
+
 
 ```{r, warning=FALSE, message=FALSE}
 # Model using length at birth and gestational age as predictors (main effects only)
@@ -298,4 +304,7 @@ cv_df %>%
        title = "Model Comparison of the Cross-Validated Prediction Error") +
   scale_x_discrete(labels = c("My model", "Model with Main effects", "Model with Interactions"))
 ```
+
+* From the plot, the model with main effects has the highest root mean square error (RMSE), followed by my proposed model and the model with interaction terms. To conclude, since the model with interaction terms my model has the relatively lowest RMSE, we will choose this model as the optimal model among the three models due to its better predictive ability.
+
 
