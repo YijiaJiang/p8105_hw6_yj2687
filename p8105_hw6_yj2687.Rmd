@@ -98,7 +98,7 @@ The point of this is not to say you should always use the bootstrap -- it's poss
 homicide_url = "https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv"
 homicide_raw = read_csv(url(homicide_url)) 
 
-# Clean dataset
+# Clean the dataset
 # Create variables city_state, resolved;
 # Omit cities without victim race reports and error city;
 # Limit victim_race to white or black
@@ -126,10 +126,10 @@ baltimore_logistic = homicide_df %>%
 
 # Obtain the estimate and CI of the adjusted odds ratio for solving homicides
 baltimore_logistic_summary = baltimore_logistic %>% 
-  broom::tidy(conf.int = T) %>% 
+  broom::tidy() %>% 
   mutate(OR = exp(estimate),
-         CI_lower = exp(conf.low),
-         CI_upper = exp(conf.high)) %>% 
+         CI_lower = exp(estimate - 1.96 * std.error),
+         CI_upper = exp(estimate + 1.96 * std.error)) %>% 
   select(term, OR, CI_lower,CI_upper)
 
 baltimore_logistic_summary
@@ -142,6 +142,7 @@ baltimore_logistic_summary %>%
                col.names = c("Term", "Estimated adjusted OR", "Lower bound of 95%CI", "Upper bound of 95%CI"))
 ```
 
+* Holding all other variables constant, the estimate of the adjusted odds ratio for solving homicides is 0.426 comparing male victims to female victims with 95% CI of (0.325, 0.558).
 * For the city of Baltimore, MD, controlling for all other variables, the homicides whose victim is male are less like to be resolved than those whose victim is female.
 
 
@@ -151,13 +152,13 @@ allcities_logistic = homicide_df %>%
   nest(data = -city_state) %>% 
   mutate(
     models = map(data, ~glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial())),
-    results = map(models, ~broom::tidy(.x, conf.int = T))) %>% 
+    results = map(models, ~broom::tidy(.x))) %>% 
   select(city_state, results) %>% 
   unnest(results) %>% 
   mutate(
     OR = exp(estimate),
-    CI_lower = exp(conf.low),
-    CI_upper = exp(conf.high),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error),
   ) %>% 
   filter(term == "victim_sexMale") %>% 
   select(city_state, OR, CI_lower, CI_upper) 
@@ -180,7 +181,9 @@ allcities_logistic %>%
         plot.title = element_text(size = 12)) 
 ```
 
-* Holding all other variables constant, for most cities, homicides in which victim is male are less likely to be resolved than those in which the victim is female, as we can observe that most of the estimated odds ratios for solving homicides are less than 1. In particular, for those where OR is less than 1 and CI fail to include 1, such as New York and Chicago, we can safely say that homicide cases with male victims are significantly less likely to be resolved compared to those with female victims.
+* Holding all other variables constant, for most cities, homicides in which victim is male are less likely to be resolved than those in which the victim is female, as we can observe that most of the estimated odds ratios for solving homicides are less than 1. 
+* In particular, for those where OR is less than 1 and CI fail to include 1, such as New York and Chicago, we can safely say that homicide cases with male victims are significantly less likely to be resolved compared to those with female victims. 
+* However, for those whose CI includes 1, such as Stockton and Albuquerque, we cannot immediately tell that the homicide cases with male and female victims are solved at no apparent difference.
 
 &nbsp;
 
@@ -195,8 +198,8 @@ birthweight_raw <- read_csv("./p8105_hw6_data/birthweight.csv")
 birthweight_df = birthweight_raw %>% 
   janitor::clean_names() %>%
   mutate(across(.cols = c(babysex, malform, frace, mrace), as.factor)) %>% 
-  mutate(babysex = ifelse(babysex == "1", "male","female"),
-         malform = ifelse(malform == "0", "absent","present"),
+  mutate(babysex = ifelse(babysex == "1", "Male","Female"),
+         malform = ifelse(malform == "0", "Absent","Present"),
          frace = recode(frace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican", "8" = "Other", "9" = "Unknown"),
          mrace = recode(mrace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican", "8" = "Other"))
 
@@ -224,7 +227,7 @@ model_fit1 = lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mh
 summary(model_fit1)
 ```
 
-* After looking at the summary, I found out the p-value of `fincome` is greater than 0.05 and hence I am going to drop it.
+* After looking at the summary, I found out the p-value of `fincome` is greater than 0.05 and hence I am going to remove it from my model.
 
 ```{r, warning=FALSE, message=FALSE}
 # Check correlation between predictors and the selected continuous variables
@@ -263,27 +266,32 @@ birthweight_df %>%
        title = "Model Residuals Against Fitted Values") 
 ```
 
-* The residuals vs. fitted values plot can be used to assess constant variance in the data. From the plot above, we can observe a outlier with residual greater than 2000 and a cluster around 0 towards the higher end of the fitted values. It looks like a nonconstant variance plot as the spread of the residuals fails to be roughly equal at each level of the fitted values. Thus, we will say that the constant variance assumption is violated.
+* The residuals vs. fitted values plot can be used to assess constant variance in the data. From the plot above, we can observe a outlier with residual greater than 2000 and a cluster around 0 towards the higher end of the fitted values, between 2000 and 4000. It looks like a nonconstant variance plot as the spread of the residuals fails to be roughly equal at each level of the fitted values. Thus, we will say that the constant variance assumption is violated.
 
 
 ```{r, warning=FALSE, message=FALSE}
 # Model using length at birth and gestational age as predictors (main effects only)
 comp_fit1 = lm(bwt ~ blength + gaweeks, data = birthweight_df)
+summary(comp_fit1)
 
 # Model using head circumference, length, sex, and all interactions (including the three-way interaction) between these
 comp_fit2 = lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = birthweight_df)
+summary(comp_fit2)
 ```
 
 
 
 ```{r, warning=FALSE, message=FALSE}
 # Make a comparison with two other models in terms of the cross-validated prediction error
+# Set a seed
+set.seed(123)
+
 # Cross Validation
 cv_df =
   crossv_mc(birthweight_df, 100) %>% 
   mutate(train = map(train, as_tibble),
          test = map(test, as_tibble)) %>% 
-  mutate(model1 = map(train, ~lm(bwt ~ babysex + bhead + delwt + gaweeks + mheight + mrace + smoken, data = as_tibble(.x))),
+  mutate(model1 = map(train, ~lm(bwt ~ babysex + bhead + delwt + gaweeks + mheight + mrace + smoken, data = .x)),
          model2 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
          model3 = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = .x))) %>% 
   mutate(rmse_model1 = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
@@ -302,7 +310,7 @@ cv_df %>%
   geom_violin() +
   labs(x = "Model", y = "Root Mean Square Error (RMSE)",
        title = "Model Comparison of the Cross-Validated Prediction Error") +
-  scale_x_discrete(labels = c("My model", "Model with Main effects", "Model with Interactions"))
+  scale_x_discrete(labels = c("My Model", "Model with Main effects", "Model with Interactions"))
 ```
 
 * From the plot, the model with main effects has the highest root mean square error (RMSE), followed by my proposed model and the model with interaction terms. To conclude, since the model with interaction terms my model has the relatively lowest RMSE, we will choose this model as the optimal model among the three models due to its better predictive ability.
